@@ -158,7 +158,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     async def async_energy_polling(hass: HomeAssistant, manager: CameManager, stop_event: threading.Event):
         """Polling async per i dati energia."""
-       
+
 
         try:
             while not stop_event.is_set():
@@ -219,7 +219,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 # MODIFICATO: Usa `await` per attendere la configurazione del tipo di dispositivo.
                 # MODIFICATO: Usa `async_forward_entry_setups` per conformità
                 await hass.config_entries.async_forward_entry_setups(entry, [ha_type])
-                
+
                 hass.data[DOMAIN][CONF_ENTRY_IS_SETUP].add(config_entries_key)
             else:
                 async_dispatcher_send(
@@ -288,7 +288,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         )
 
     hass.bus.async_listen_once("homeassistant_started", start_energy_polling)
-    
+
     async def async_refresh_scenarios_service(call):
         _LOGGER.debug("Servizio refresh_scenarios chiamato")
         scenario_manager = hass.data[DOMAIN]["came_scenario_manager"]
@@ -297,7 +297,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         async_dispatcher_send(hass, "came_scenarios_refreshed")
 
     hass.services.async_register(DOMAIN, "refresh_scenarios", async_refresh_scenarios_service)
-    
+
     return True
 
 
