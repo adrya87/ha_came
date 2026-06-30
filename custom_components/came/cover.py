@@ -5,7 +5,6 @@ from typing import List
 
 from homeassistant.components.cover import DOMAIN as COVER_DOMAIN
 from homeassistant.components.cover import (
-    ENTITY_ID_FORMAT,
     CoverEntity,
 )
 from homeassistant.config_entries import ConfigEntry
@@ -34,8 +33,10 @@ async def async_setup_entry(
         entities = await hass.async_add_executor_job(_setup_entities, hass, dev_ids)
         async_add_entities(entities)
 
-    async_dispatcher_connect(
-        hass, SIGNAL_DISCOVERY_NEW.format(COVER_DOMAIN), async_discover_sensor
+    config_entry.async_on_unload(
+        async_dispatcher_connect(
+            hass, SIGNAL_DISCOVERY_NEW.format(COVER_DOMAIN), async_discover_sensor
+        )
     )
 
     devices_ids = hass.data[DOMAIN][CONF_PENDING].pop(COVER_DOMAIN, [])
@@ -60,7 +61,6 @@ class CameCoverEntity(CameEntity, CoverEntity):
     def __init__(self, device: CameDevice):
         """Init CAME opening device entity."""
         super().__init__(device)
-        self.entity_id = ENTITY_ID_FORMAT.format(self.unique_id)
         self._attr_is_closed = None
 
 

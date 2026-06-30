@@ -9,8 +9,6 @@
   "codeowners": [
     "@Den901"
   ],
-  "requirements": [
-    "pycame"
-  ],
+  "requirements": [],
   "iot_class": "cloud_polling"
 }

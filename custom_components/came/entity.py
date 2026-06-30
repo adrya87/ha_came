@@ -9,6 +9,8 @@ from typing import Any, Dict, Optional
 
 from homeassistant.const import ATTR_ATTRIBUTION, CONF_ENTITIES
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity import Entity
 from .pycame.devices import CameDevice
@@ -20,9 +22,9 @@ _LOGGER = logging.getLogger(__name__)
 
 async def cleanup_device_registry(hass: HomeAssistant, device_id):
     """Remove device registry entry if there are no remaining entities."""
-    device_registry = await hass.helpers.device_registry.async_get_registry()
-    entity_registry = await hass.helpers.entity_registry.async_get_registry()
-    if device_id and not hass.helpers.entity_registry.async_entries_for_device(
+    device_registry = dr.async_get(hass)
+    entity_registry = er.async_get(hass)
+    if device_id and not er.async_entries_for_device(
         entity_registry, device_id, include_disabled_entities=True
     ):
         device_registry.async_remove_device(device_id)
@@ -73,18 +75,20 @@ class CameEntity(Entity):
         self.async_schedule_update_ha_state(True)
 
     @callback
-    async def _delete_callback(self, dev_id):
+    def _delete_callback(self, dev_id):
         """Remove this entity."""
         if dev_id == self._device.unique_id:
-            entity_registry = (
-                await self.hass.helpers.entity_registry.async_get_registry()
-            )
-            if entity_registry.async_is_registered(self.entity_id):
-                entity_entry = entity_registry.async_get(self.entity_id)
-                entity_registry.async_remove(self.entity_id)
-                await cleanup_device_registry(self.hass, entity_entry.device_id)
-            else:
-                await self.async_remove(force_remove=True)
+            self.hass.async_create_task(self._async_delete())
+
+    async def _async_delete(self):
+        """Remove this entity from Home Assistant and registries."""
+        entity_registry = er.async_get(self.hass)
+        if entity_registry.async_is_registered(self.entity_id):
+            entity_entry = entity_registry.async_get(self.entity_id)
+            entity_registry.async_remove(self.entity_id)
+            await cleanup_device_registry(self.hass, entity_entry.device_id)
+        else:
+            await self.async_remove(force_remove=True)
 
     @property
     def available(self) -> bool:

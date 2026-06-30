@@ -29,13 +29,12 @@ from homeassistant.const import (
 )
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
-from homeassistant.helpers.dispatcher import async_dispatcher_send, dispatcher_send
+from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.typing import ConfigType
 from .pycame.came_manager import CameManager
 from .pycame.devices import CameDevice
-from .pycame.exceptions import ETIDomoConnectionError, ETIDomoConnectionTimeoutError
+from .pycame.exceptions import ETIDomoConnectionError
 from .pycame.devices.base import TYPE_ENERGY_SENSOR
-from .pycame.devices.came_scenarios import ScenarioManager
 
 
 from .const import (
@@ -121,7 +120,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     try:
         devices = await hass.async_add_executor_job(initial_update)
-    except ETIDomoConnectionTimeoutError as exc:
+    except ETIDomoConnectionError as exc:
         raise ConfigEntryNotReady from exc
 
     # Crea evento di stop per thread e polling
@@ -133,7 +132,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             try:
                 if manager.status_update():
                     _LOGGER.debug("Received devices status update.")
-                    dispatcher_send(hass, SIGNAL_UPDATE_ENTITY)
+                    hass.add_job(async_dispatcher_send, hass, SIGNAL_UPDATE_ENTITY)
             except ETIDomoConnectionError:
                 _LOGGER.debug("Server goes offline. Reconnecting...")
             sleep(1)  # per evitare ciclo troppo veloce
@@ -184,7 +183,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     if isinstance(meter_updates, list) and manager._devices:
                         for d in meter_updates:
                             for dev in manager._devices:
-                                if dev.type_id == TYPE_ENERGY_SENSOR and d.get("act_id") == dev.act_id:
+                                meter_id = d.get("id", d.get("act_id"))
+                                if dev.type_id == TYPE_ENERGY_SENSOR and meter_id == dev.act_id:
                                     if hasattr(dev, "push_update"):
                                         dev.push_update(d)
                                         async_dispatcher_send(hass, SIGNAL_UPDATE_ENTITY)
@@ -201,7 +201,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     async def async_load_devices(devices: List[CameDevice]):
         """Load new devices."""
         dev_types = {}
-        for device in devices:
+        for device in devices or []:
             if (
                 device.type in CAME_TYPE_TO_HA
                 and device.unique_id not in hass.data[DOMAIN][CONF_ENTITIES]
@@ -239,7 +239,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
         # Delete not exist device
         newlist_ids = []
-        for device in devices:
+        for device in devices or []:
             newlist_ids.append(device.unique_id)
         for dev_id in list(hass.data[DOMAIN][CONF_ENTITIES]):
             if dev_id not in newlist_ids:
@@ -253,6 +253,32 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         async_dispatcher_send(hass, SIGNAL_UPDATE_ENTITY)
 
     hass.services.async_register(DOMAIN, SERVICE_FORCE_UPDATE, async_force_update)
+
+    async def async_create_scenario_service(call):
+        """Start recording a new user scenario."""
+        scenario_manager = hass.data[DOMAIN]["came_scenario_manager"]
+        name = call.data["name"]
+        await hass.async_add_executor_job(scenario_manager.create_scenario, name)
+
+    async def async_delete_scenario_service(call):
+        """Delete an existing user scenario."""
+        scenario_manager = hass.data[DOMAIN]["came_scenario_manager"]
+        scenario_id = call.data["scenario_id"]
+        await hass.async_add_executor_job(scenario_manager.delete_scenario, scenario_id)
+        async_dispatcher_send(hass, "came_scenarios_refreshed")
+
+    hass.services.async_register(
+        DOMAIN,
+        "create_scenario",
+        async_create_scenario_service,
+        schema=vol.Schema({vol.Required("name"): cv.string}),
+    )
+    hass.services.async_register(
+        DOMAIN,
+        "delete_scenario",
+        async_delete_scenario_service,
+        schema=vol.Schema({vol.Required("scenario_id"): cv.positive_int}),
+    )
 
     # Avvia polling energia async e salva task in hass.data
     async def start_energy_polling(_):
@@ -268,7 +294,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         scenario_manager = hass.data[DOMAIN]["came_scenario_manager"]
         await hass.async_add_executor_job(scenario_manager.refresh_scenarios)
         _LOGGER.debug("refresh_scenarios completato, invio evento 'came_scenarios_refreshed'")
-        dispatcher_send(hass, "came_scenarios_refreshed")
+        async_dispatcher_send(hass, "came_scenarios_refreshed")
 
     hass.services.async_register(DOMAIN, "refresh_scenarios", async_refresh_scenarios_service)
     
@@ -292,11 +318,27 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry):
     if unload_ok:
         hass.services.async_remove(DOMAIN, SERVICE_FORCE_UPDATE)
         hass.services.async_remove(DOMAIN, SERVICE_PULL_DEVICES)
+        hass.services.async_remove(DOMAIN, "create_scenario")
+        hass.services.async_remove(DOMAIN, "delete_scenario")
+        hass.services.async_remove(DOMAIN, "refresh_scenarios")
 
-        thread = hass.data[DOMAIN][CONF_CAME_LISTENER]  # type: threading.Thread
+        domain_data = hass.data[DOMAIN]
+
+        stop_event = domain_data.get("stop_event")
+        if stop_event:
+            stop_event.set()
+
+        energy_task = domain_data.get("energy_polling_task")
+        if energy_task:
+            energy_task.cancel()
+            await asyncio.gather(energy_task, return_exceptions=True)
+
+        thread = domain_data[CONF_CAME_LISTENER]  # type: threading.Thread
+        if thread.is_alive():
+            await hass.async_add_executor_job(thread.join, 5)
+            if thread.is_alive():
+                _LOGGER.warning("CAME listener thread did not stop within timeout")
 
         hass.data.pop(DOMAIN)
-
-        thread.join()
 
     return unload_ok

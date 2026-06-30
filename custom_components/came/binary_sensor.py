@@ -4,7 +4,6 @@ from typing import List
 
 from homeassistant.components.binary_sensor import DOMAIN as BINARY_SENSOR_DOMAIN
 from homeassistant.components.binary_sensor import (
-    ENTITY_ID_FORMAT,
     BinarySensorEntity
 )
 from homeassistant.config_entries import ConfigEntry
@@ -33,8 +32,10 @@ async def async_setup_entry(
         entities = await hass.async_add_executor_job(_setup_entities, hass, dev_ids)
         async_add_entities(entities)
 
-    async_dispatcher_connect(
-        hass, SIGNAL_DISCOVERY_NEW.format(BINARY_SENSOR_DOMAIN), async_discover_sensor
+    config_entry.async_on_unload(
+        async_dispatcher_connect(
+            hass, SIGNAL_DISCOVERY_NEW.format(BINARY_SENSOR_DOMAIN), async_discover_sensor
+        )
     )
 
     devices_ids = hass.data[DOMAIN][CONF_PENDING].pop(BINARY_SENSOR_DOMAIN, [])
@@ -59,9 +60,9 @@ class CameDigitalInEntity(CameEntity, BinarySensorEntity):
     def __init__(self, device: CameDevice):
         """Init CAME digitalin device entity."""
         super().__init__(device)
-        self.entity_id = ENTITY_ID_FORMAT.format(self.unique_id)
 
     @property
     def is_on(self):
-        """Return true if light is on."""
+        """Return true if digital input is active."""
+        # CAME digital inputs report 0 when the input/alarm is active.
         return self._device.state == BINARY_SENSOR_STATE_OFF

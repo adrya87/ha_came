@@ -1,7 +1,6 @@
 """ETI/Domo relay device."""
 
 import logging
-from typing import List
 
 from .base import TYPE_GENERIC_RELAY, CameDevice, DeviceState
 
@@ -54,4 +53,4 @@ class CameRelay(CameDevice):
 
     def update(self):
         """Update device state."""
-        self._force_update("relay")
+        self._force_update("relays")

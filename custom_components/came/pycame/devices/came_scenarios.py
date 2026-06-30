@@ -70,14 +70,14 @@ class ScenarioManager:
         """Inizia la registrazione di uno scenario."""
         self._manager.application_request(
             {"cmd_name": "scenario_registration_start", "name": name},
-            resp_command="scenario_registration_start_ack"
+            resp_command="scenario_registration_resp"
         )
 
     def delete_scenario(self, scenario_id: int):
         """Elimina uno scenario."""
         self._manager.application_request(
             {"cmd_name": "scenario_delete_req", "id": scenario_id},
-            resp_command="scenario_delete_resp"
+            resp_command=None
         )
         
     def refresh_scenarios(self):
