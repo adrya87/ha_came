@@ -5,7 +5,6 @@ from typing import List
 
 from homeassistant.components.switch import DOMAIN as SWITCH_DOMAIN
 from homeassistant.components.switch import (
-    ENTITY_ID_FORMAT,
     SwitchEntity,
 )
 
@@ -36,8 +35,10 @@ async def async_setup_entry(
         entities = await hass.async_add_executor_job(_setup_entities, hass, dev_ids)
         async_add_entities(entities)
 
-    async_dispatcher_connect(
-        hass, SIGNAL_DISCOVERY_NEW.format(SWITCH_DOMAIN), async_discover_sensor
+    config_entry.async_on_unload(
+        async_dispatcher_connect(
+            hass, SIGNAL_DISCOVERY_NEW.format(SWITCH_DOMAIN), async_discover_sensor
+        )
     )
 
     devices_ids = hass.data[DOMAIN][CONF_PENDING].pop(SWITCH_DOMAIN, [])
@@ -62,7 +63,6 @@ class CameSwitchEntity(CameEntity, SwitchEntity):
     def __init__(self, device: CameDevice):
         """Init CAME switch device entity."""
         super().__init__(device)
-        self.entity_id = ENTITY_ID_FORMAT.format(self.unique_id)
 
 
     @property

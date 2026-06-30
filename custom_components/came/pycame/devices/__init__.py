@@ -16,6 +16,25 @@ from .came_scenarios import ScenarioDevice
 
 _LOGGER = logging.getLogger(__name__)
 
+FEATURE_RESPONSE_FIELDS = {
+    "lights": ("light_list", "array"),
+    "openings": ("array", "openings_list"),
+    "relays": ("array", "relays_list"),
+    "thermoregulation": ("array", "thermo_list"),
+    "energy": ("array",),
+    "digitalin": ("array",),
+}
+
+
+def _response_items(response: dict, feature: str) -> list:
+    """Return device items from documented and legacy response fields."""
+    for field in FEATURE_RESPONSE_FIELDS.get(feature, ("array",)):
+        items = response.get(field)
+        if items is not None:
+            return items if isinstance(items, list) else [items]
+    return []
+
+
 def get_featured_devices(manager, feature: str) -> List[CameDevice]:
     """Get device implementations for the given feature."""
     devices = []
@@ -51,7 +70,7 @@ def get_featured_devices(manager, feature: str) -> List[CameDevice]:
     }
     response = manager.application_request(cmd, response_name)
 
-    for device_info in response.get("array", []):
+    for device_info in _response_items(response, feature):
         if feature == "lights":
             devices.append(CameLight(manager, device_info))
         elif feature == "openings":

@@ -5,7 +5,6 @@ from typing import List
 from homeassistant.components.light import ATTR_BRIGHTNESS, ATTR_HS_COLOR
 from homeassistant.components.light import DOMAIN as LIGHT_DOMAIN
 from homeassistant.components.light import (
-    ENTITY_ID_FORMAT,
     LightEntity,
 )
 from homeassistant.config_entries import ConfigEntry
@@ -29,8 +28,10 @@ async def async_setup_entry(
         entities = await hass.async_add_executor_job(_setup_entities, hass, dev_ids)
         async_add_entities(entities)
 
-    async_dispatcher_connect(
-        hass, SIGNAL_DISCOVERY_NEW.format(LIGHT_DOMAIN), async_discover_sensor
+    config_entry.async_on_unload(
+        async_dispatcher_connect(
+            hass, SIGNAL_DISCOVERY_NEW.format(LIGHT_DOMAIN), async_discover_sensor
+        )
     )
 
     devices_ids = hass.data[DOMAIN][CONF_PENDING].pop(LIGHT_DOMAIN, [])
@@ -52,7 +53,6 @@ class CameLightEntity(CameEntity, LightEntity):
 
     def __init__(self, device: CameDevice):
         super().__init__(device)
-        self.entity_id = ENTITY_ID_FORMAT.format(self.unique_id)
 
         # anti-rimbalzo brightness
         self._pending_brightness = None

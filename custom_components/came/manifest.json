@@ -1,7 +1,7 @@
 {
   "domain": "came",
   "name": "CAME ETI/Domo",
-  "version": "1.0.1-stable",
+  "version": "1.1.0",
   "documentation": "https://github.com/Den901/ha-came",
   "issue_tracker": "https://github.com/Den901/ha-came/issues",
   "dependencies": [],
@@ -9,8 +9,6 @@
   "codeowners": [
     "@Den901"
   ],
-  "requirements": [
-    "pycame"
-  ],
-  "iot_class": "cloud_polling"
+  "requirements": [],
+  "iot_class": "local_polling"
 }

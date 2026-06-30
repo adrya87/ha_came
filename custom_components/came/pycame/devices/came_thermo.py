@@ -107,6 +107,7 @@ class CameThermo(CameDevice):
         temperature: float = None,
         season: str = None,
         fan_speed: int = None,
+        dehumidifier: dict = None,
     ):
         """Change device's config."""
         if (
@@ -114,6 +115,7 @@ class CameThermo(CameDevice):
             and temperature is None
             and season is None
             and fan_speed is None
+            and dehumidifier is None
         ):
             raise ValueError("At least one parameter is required")
 
@@ -136,11 +138,14 @@ class CameThermo(CameDevice):
         if fan_speed is not None:
             cmd["extended_infos"] = 1
             cmd["fan_speed"] = fan_speed
+        if dehumidifier is not None:
+            cmd["extended_infos"] = 1
+            cmd["dehumidifier"] = dehumidifier
 
         self._manager.application_request(cmd)
 
         log = {}
-        for k in ["mode", "set_point", "season", "fan_speed"]:
+        for k in ["mode", "set_point", "season", "fan_speed", "dehumidifier"]:
             if k in cmd:
                 log[k] = cmd[k]
 
@@ -148,6 +153,21 @@ class CameThermo(CameDevice):
             log["mode"] = int(cmd["mode"] != THERMO_MODE_OFF)
 
         _LOGGER.debug('Set new status for thermostat "%s": %s', self.name, log)
+
+    def set_plant_season(self, season: str) -> None:
+        """Set the working season for the thermoregulation plant."""
+        if season not in (
+            THERMO_SEASON_WINTER,
+            THERMO_SEASON_SUMMER,
+            THERMO_SEASON_OFF,
+        ):
+            raise ValueError(f"Invalid thermo season: {season}")
+
+        self._manager.application_request(
+            {"cmd_name": "thermo_season_req", "season": season},
+            resp_command=None,
+        )
+        self._device_info["season"] = season
 
     @property
     def fan_mode(self) -> Optional[str]:
@@ -168,6 +188,27 @@ class CameThermo(CameDevice):
     def set_target_temperature(self, temp: float) -> None:
         """Set the temperature we try to reach."""
         self.zone_config(temperature=temp)
+
+    def set_dehumidifier(
+        self,
+        enabled: Optional[int] = None,
+        setpoint: Optional[int] = None,
+    ) -> None:
+        """Set dehumidifier state or humidity target."""
+        dehumidifier = {}
+        if enabled is not None:
+            dehumidifier["enabled"] = enabled
+        if setpoint is not None:
+            dehumidifier["setpoint"] = setpoint
+
+        if not dehumidifier:
+            raise ValueError("At least one dehumidifier parameter is required")
+
+        self.zone_config(dehumidifier=dehumidifier)
+
+    def set_target_humidity(self, humidity: int) -> None:
+        """Set target humidity for dehumidifier."""
+        self.set_dehumidifier(setpoint=humidity)
 
     def set_fan_speed(self, speed: str) -> None:
         """Imposta la velocità della ventola del fan coil."""

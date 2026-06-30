@@ -16,11 +16,11 @@ from .exceptions import (
     ETIDomoError,
 )
 from .models import Floor, Room
-from homeassistant.helpers.dispatcher import async_dispatcher_send
 
 _LOGGER = logging.getLogger(__name__)
 
 _STARTUP = []
+REQUEST_TIMEOUT = 30
 
 
 class CameManager:
@@ -91,14 +91,17 @@ class CameManager:
                 _LOGGER.debug("Send API request: %s", command)
 
             response = self._session.post(
-                url, data={"command": json.dumps(command)}, headers=headers
+                url,
+                data={"command": json.dumps(command)},
+                headers=headers,
+                timeout=REQUEST_TIMEOUT,
             )
             response.raise_for_status()
 
             if DEBUG_DEEP:
                 _LOGGER.debug("Response: %s", response.text)
 
-        except requests.exceptions.ConnectTimeout as exception:
+        except requests.exceptions.Timeout as exception:
             raise ETIDomoConnectionTimeoutError(
                 "Timeout occurred while connecting to ETI/Domo device."
             ) from exception

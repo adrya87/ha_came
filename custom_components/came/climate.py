@@ -5,18 +5,14 @@ from typing import Optional, Any, Dict
 
 from homeassistant.components.climate import DOMAIN as CLIMATE_DOMAIN
 from homeassistant.components.climate import (
-    ENTITY_ID_FORMAT,
     HVACMode,
     ClimateEntity,
     ClimateEntityFeature,
 )
 from homeassistant.components.climate.const import HVACAction
 from .pycame.devices.came_thermo import (
-    THERMO_FAN_SPEED_SLOW,
-    THERMO_FAN_SPEED_MEDIUM,
-    THERMO_FAN_SPEED_FAST,
-    THERMO_FAN_SPEED_AUTO,
     THERMO_DEHUMIDIFIER_ON,
+    THERMO_DEHUMIDIFIER_OFF,
     THERMO_MODE_AUTO,
     THERMO_MODE_JOLLY,
     THERMO_MODE_MANUAL,
@@ -43,6 +39,8 @@ from .entity import CameEntity
 
 _LOGGER = logging.getLogger(__name__)
 
+ATTR_HUMIDITY = "humidity"
+
 CAME_MODE_TO_HA = {
     THERMO_MODE_OFF: HVACMode.OFF,
     THERMO_MODE_AUTO: HVACMode.AUTO,
@@ -65,8 +63,10 @@ async def async_setup_entry(
         entities = await hass.async_add_executor_job(_setup_entities, hass, dev_ids)
         async_add_entities(entities)
 
-    async_dispatcher_connect(
-        hass, SIGNAL_DISCOVERY_NEW.format(CLIMATE_DOMAIN), async_discover_sensor
+    config_entry.async_on_unload(
+        async_dispatcher_connect(
+            hass, SIGNAL_DISCOVERY_NEW.format(CLIMATE_DOMAIN), async_discover_sensor
+        )
     )
 
     devices_ids = hass.data[DOMAIN][CONF_PENDING].pop(CLIMATE_DOMAIN, [])
@@ -98,7 +98,6 @@ def _setup_entities(hass, dev_ids):
 class CameClimateEntity(CameEntity, ClimateEntity):
     def __init__(self, device: CameDevice):
         super().__init__(device)
-        self.entity_id = ENTITY_ID_FORMAT.format(self.unique_id)
         self._attr_target_temperature_step = PRECISION_TENTHS
         self._attr_temperature_unit = UnitOfTemperature.CELSIUS
 
@@ -166,13 +165,7 @@ class CameClimateEntity(CameEntity, ClimateEntity):
 
     @property
     def hvac_modes(self) -> list[HVACMode]:
-        if self._device.season == THERMO_SEASON_OFF:
-            return []
-        base = [HVACMode.OFF, HVACMode.AUTO]
-        if self._device.season == THERMO_SEASON_WINTER:
-            base.append(HVACMode.HEAT)
-        elif self._device.season == THERMO_SEASON_SUMMER:
-            base.append(HVACMode.COOL)
+        base = [HVACMode.OFF, HVACMode.AUTO, HVACMode.HEAT, HVACMode.COOL]
         if self._device.support_target_humidity:
             base.append(HVACMode.DRY)
         return base
@@ -186,15 +179,55 @@ class CameClimateEntity(CameEntity, ClimateEntity):
 
     def set_hvac_mode(self, hvac_mode: str) -> None:
         if hvac_mode == HVACMode.OFF:
-            self._device.zone_config(mode=THERMO_MODE_OFF)
+            self._device.zone_config(
+                mode=THERMO_MODE_OFF,
+                dehumidifier={"enabled": THERMO_DEHUMIDIFIER_OFF}
+                if self._device.support_target_humidity
+                else None,
+            )
         elif hvac_mode == HVACMode.HEAT:
-            self._device.zone_config(mode=THERMO_MODE_MANUAL, season=THERMO_SEASON_WINTER)
+            self._device.set_plant_season(THERMO_SEASON_WINTER)
+            self._device.zone_config(
+                mode=THERMO_MODE_MANUAL,
+                season=THERMO_SEASON_WINTER,
+                dehumidifier={"enabled": THERMO_DEHUMIDIFIER_OFF}
+                if self._device.support_target_humidity
+                else None,
+            )
         elif hvac_mode == HVACMode.COOL:
-            self._device.zone_config(mode=THERMO_MODE_MANUAL, season=THERMO_SEASON_SUMMER)
+            self._device.set_plant_season(THERMO_SEASON_SUMMER)
+            self._device.zone_config(
+                mode=THERMO_MODE_MANUAL,
+                season=THERMO_SEASON_SUMMER,
+                dehumidifier={"enabled": THERMO_DEHUMIDIFIER_OFF}
+                if self._device.support_target_humidity
+                else None,
+            )
         elif hvac_mode == HVACMode.AUTO:
             self._device.zone_config(mode=THERMO_MODE_AUTO)
+        elif hvac_mode == HVACMode.DRY and self._device.support_target_humidity:
+            self._device.set_plant_season(THERMO_SEASON_SUMMER)
+            self._device.zone_config(
+                mode=THERMO_MODE_MANUAL,
+                season=THERMO_SEASON_SUMMER,
+                dehumidifier={"enabled": THERMO_DEHUMIDIFIER_ON},
+            )
         else:
             self._device.zone_config(mode=THERMO_MODE_AUTO)
+
+    def set_humidity(self, **kwargs) -> None:
+        humidity = kwargs.get(ATTR_HUMIDITY)
+        if humidity is not None:
+            self._device.set_target_humidity(humidity)
+
+    def turn_on(self) -> None:
+        if self._device.season == THERMO_SEASON_SUMMER:
+            self.set_hvac_mode(HVACMode.COOL)
+        else:
+            self.set_hvac_mode(HVACMode.HEAT)
+
+    def turn_off(self) -> None:
+        self.set_hvac_mode(HVACMode.OFF)
 
     @property
     def extra_state_attributes(self) -> Dict[str, Any]:
@@ -208,6 +241,8 @@ class CameClimateEntity(CameEntity, ClimateEntity):
             "fan_speed": dev.fan_speed,
             "set_point": dev.set_point / 10 if dev.set_point is not None else None,
             "season": dev.season,
+            "dehumidifier": dev.dehumidifier_state,
+            "target_humidity": dev.target_humidity,
             "antifreeze": dev.antifreeze / 10 if dev.antifreeze is not None else None,
             "t1": dev.t1 / 10 if dev.t1 is not None else None,
             "t2": dev.t2 / 10 if dev.t2 is not None else None,

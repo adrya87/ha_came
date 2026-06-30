@@ -8,7 +8,7 @@ from typing import List
 from homeassistant.components.scene import Scene
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import STATE_ON, STATE_OFF, STATE_UNAVAILABLE
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_registry import async_get as async_get_entity_registry
 
@@ -124,10 +124,13 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
 
 
     # Registra listener evento
-    async def _dispatcher_handler():
+    @callback
+    def _dispatcher_handler():
         hass.async_create_task(handle_refresh_scenarios())
 
-    async_dispatcher_connect(hass, "came_scenarios_refreshed", _dispatcher_handler)
+    config_entry.async_on_unload(
+        async_dispatcher_connect(hass, "came_scenarios_refreshed", _dispatcher_handler)
+    )
 
 
 class CameScenarioEntity(Scene):

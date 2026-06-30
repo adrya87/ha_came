@@ -30,9 +30,23 @@ class CameEnergySensor(CameDevice):
     def update(self):
         """Update device state."""
         try:
-            self._force_update(self._update_cmd_base, self._update_src_field)
+            response = self._manager.application_request(
+                {"cmd_name": "meters_list_req"}, "meters_list_resp"
+            )
+            res = response.get("array", [])
+            if not isinstance(res, list):
+                res = [res]
+            for device_info in res:
+                if device_info.get("id") == self.act_id:
+                    self.update_state(device_info)
+                    return
         except ETIDomoUnmanagedDeviceError:
             pass
+
+    @property
+    def act_id(self) -> Optional[int]:
+        """Return the meter identifier."""
+        return self._device_info.get("id") or self._device_info.get("act_id")
 
     def push_update(self, state: DeviceState):
         """Update from ETI/Domo push data."""

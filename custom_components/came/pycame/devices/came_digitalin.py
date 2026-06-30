@@ -27,7 +27,7 @@ class CameDigitalIn(CameDevice):
 
     def update(self):
         """Update device state."""
-        self._force_update(self._update_cmd_base, self._update_src_field)
+        self._force_update("digitalin")
 
 
     @property

@@ -1,7 +1,7 @@
 """ETI/Domo relay device."""
 
 import logging
-from typing import Dict, List, Optional
+from typing import Optional
 
 from .base import TYPE_OPENING, CameDevice, DeviceState
 from ..exceptions import ETIDomoUnmanagedDeviceError
@@ -33,11 +33,13 @@ class CameOpening(CameDevice):
         if state is None:
             raise ValueError("At least one parameter is required")
 
-        self._check_act_id()
+        act_id = self._act_id_for_state(state)
+        if not act_id:
+            raise ETIDomoUnmanagedDeviceError()
 
         cmd = {
             "cmd_name": "opening_move_req",
-            "act_id": self.act_id,
+            "act_id": act_id,
             "wanted_status": state if state is not None else self.state,
         }
         log = {}
@@ -56,7 +58,22 @@ class CameOpening(CameDevice):
     @property
     def act_id(self) -> Optional[int]:
         """Return the action ID for device."""
-        return self._device_info.get("open_act_id")
+        return (
+            self._device_info.get("act_id")
+            or self._device_info.get("act_id_open")
+            or self._device_info.get("open_act_id")
+        )
+
+    @property
+    def close_act_id(self) -> Optional[int]:
+        """Return the close action ID for device."""
+        return self._device_info.get("act_id_close") or self._device_info.get("close_act_id")
+
+    def _act_id_for_state(self, state: int) -> Optional[int]:
+        """Return the action ID to use for the requested opening movement."""
+        if state == OPENING_STATE_CLOSE:
+            return self.close_act_id or self.act_id
+        return self.act_id
 
     def _check_act_id(self):
         """Check for act ID availability."""
@@ -74,4 +91,4 @@ class CameOpening(CameDevice):
 
     def update(self):
         """Update device state."""
-        self._force_update("opening")
+        self._force_update("openings")

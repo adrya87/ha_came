@@ -3,7 +3,6 @@
 import logging
 from homeassistant.components.sensor import (
     DOMAIN as SENSOR_DOMAIN,
-    ENTITY_ID_FORMAT,
     SensorEntity,
     SensorStateClass,
     SensorDeviceClass,
@@ -37,8 +36,10 @@ async def async_setup_entry(
         entities = await hass.async_add_executor_job(_setup_entities, hass, dev_ids)
         async_add_entities(entities)
 
-    async_dispatcher_connect(
-        hass, SIGNAL_DISCOVERY_NEW.format(SENSOR_DOMAIN), async_discover_sensor
+    config_entry.async_on_unload(
+        async_dispatcher_connect(
+            hass, SIGNAL_DISCOVERY_NEW.format(SENSOR_DOMAIN), async_discover_sensor
+        )
     )
 
     devices_ids = hass.data[DOMAIN][CONF_PENDING].pop(SENSOR_DOMAIN, [])
@@ -72,7 +73,6 @@ class CameSensorEntity(CameEntity, SensorEntity):
     def __init__(self, device: CameDevice):
         """Init CAME analog sensor device entity."""
         super().__init__(device)
-        self.entity_id = ENTITY_ID_FORMAT.format(self.unique_id)
         self._attr_state_class = SensorStateClass.MEASUREMENT
 
         if self._device.unit_of_measurement == "%":
@@ -104,7 +104,6 @@ class CameEnergySensorEntity(CameEntity, SensorEntity):
         """Init CAME energy sensor device entity."""
         super().__init__(device)
         device.hass_entity = self
-        self.entity_id = ENTITY_ID_FORMAT.format(self.unique_id)
         self._attr_state_class = SensorStateClass.MEASUREMENT
         self._attr_device_class = SensorDeviceClass.POWER
         self._attr_native_unit_of_measurement = "W"

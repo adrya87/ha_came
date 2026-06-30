@@ -137,9 +137,14 @@ class CameDevice(ABC):
 
     def update_state(self, state: DeviceState) -> bool:
         """Update device state."""
-        if state.get("act_id") != self.act_id:
+        state_act_id = state.get(
+            "act_id",
+            state.get("id", state.get("act_id_open", state.get("open_act_id"))),
+        )
+        if state_act_id != self.act_id:
             return False
 
+        state = state.copy()
         if state.get("cmd_name"):
             state.pop("cmd_name")
 
@@ -155,7 +160,7 @@ class CameDevice(ABC):
                 log,
             )
 
-        self._device_info = state
+        self._device_info.update(state)
 
         return bool(log)
 
@@ -168,13 +173,20 @@ class CameDevice(ABC):
             "topologic_scope": "act",
             "value": self.act_id,
         }
-        res = self._manager.application_request(cmd, f"{cmd_base}_list_resp").get(
-            field, []
-        )
+        response = self._manager.application_request(cmd, f"{cmd_base}_list_resp")
+        res = response.get(field)
+        if res is None:
+            res = response.get(f"{cmd_base}_list", [])
         if not isinstance(res, list):
             res = [res]
         for device_info in res:  # type: DeviceState
-            if device_info.get("act_id") == self.act_id:
+            device_act_id = device_info.get(
+                "act_id",
+                device_info.get(
+                    "id", device_info.get("act_id_open", device_info.get("open_act_id"))
+                ),
+            )
+            if device_act_id == self.act_id:
                 self.update_state(device_info)
                 return
 
