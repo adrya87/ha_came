@@ -1,0 +1,54 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build and publish release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate manifest version
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          version = os.environ["GITHUB_REF_NAME"].removeprefix("v")
+          manifest = json.loads(Path("custom_components/came/manifest.json").read_text())
+          if manifest.get("version") != version:
+              raise SystemExit(
+                  f"manifest.json version {manifest.get('version')!r} does not match tag {version!r}"
+              )
+          PY
+
+      - name: Build integration archive
+        shell: bash
+        run: |
+          cd custom_components
+          zip -r ../came.zip came -x "came/__pycache__/*" "came/**/*.pyc"
+          cd ..
+          sha256sum came.zip > came.zip.sha256
+
+      - name: Publish GitHub Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            came.zip \
+            came.zip.sha256 \
+            --title "$GITHUB_REF_NAME" \
+            --generate-notes
