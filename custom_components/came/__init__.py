@@ -18,6 +18,7 @@ from homeassistant.components.light import DOMAIN as LIGHT
 from homeassistant.components.sensor import DOMAIN as SENSOR
 from homeassistant.components.scene import DOMAIN as SCENE
 from homeassistant.components.switch import DOMAIN as SWITCH
+from homeassistant.components.time import DOMAIN as TIME
 from homeassistant.components.binary_sensor import DOMAIN as BINARY_SENSOR
 from homeassistant.config_entries import SOURCE_IMPORT, ConfigEntry
 from homeassistant.const import (
@@ -59,7 +60,7 @@ ACCOUNT_SCHEMA = vol.Schema(
         vol.Required(CONF_HOST): cv.string,
         vol.Required(CONF_USERNAME): cv.string,
         vol.Required(CONF_PASSWORD): cv.string,
-        vol.Required(CONF_TOKEN): cv.string,
+        vol.Optional(CONF_TOKEN, default=""): cv.string,
     }
 )
 
@@ -75,6 +76,17 @@ CAME_TYPE_TO_HA = {
     "Scenario": SCENE,
     "Opening": COVER,
 }
+
+TIMER_INTERVAL_SCHEMA = vol.Schema(
+    {
+        vol.Required("start"): vol.Any(cv.string, dict),
+        vol.Optional("stop"): vol.Any(cv.string, dict),
+        vol.Optional("active"): cv.boolean,
+        vol.Optional("index"): vol.All(vol.Coerce(int), vol.Range(min=0, max=3)),
+    }
+)
+
+TIMER_TIMETABLE_SCHEMA = vol.All([TIMER_INTERVAL_SCHEMA], vol.Length(max=4))
 
 
 async def async_setup(hass: HomeAssistant, config: ConfigType):
@@ -152,6 +164,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     }
 
     hass.data[DOMAIN]["came_scenario_manager"] = manager.scenario_manager
+    hass.data[DOMAIN]["came_timer_manager"] = manager.timer_manager
 
     thread.start()
 
@@ -184,7 +197,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                         for d in meter_updates:
                             for dev in manager._devices:
                                 meter_id = d.get("id", d.get("act_id"))
-                                if dev.type_id == TYPE_ENERGY_SENSOR and meter_id == dev.act_id:
+                                if (
+                                    dev.type_id == TYPE_ENERGY_SENSOR
+                                    and meter_id is not None
+                                    and meter_id == dev.act_id
+                                ):
                                     if hasattr(dev, "push_update"):
                                         dev.push_update(d)
                                         async_dispatcher_send(hass, SIGNAL_UPDATE_ENTITY)
@@ -227,6 +244,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 )
 
     await async_load_devices(devices)
+
+    for ha_type in (SWITCH, TIME):
+        config_entries_key = f"{ha_type}.{DOMAIN}"
+        if config_entries_key not in hass.data[DOMAIN][CONF_ENTRY_IS_SETUP]:
+            hass.data[DOMAIN][CONF_PENDING].setdefault(ha_type, [])
+            await hass.config_entries.async_forward_entry_setups(entry, [ha_type])
+            hass.data[DOMAIN][CONF_ENTRY_IS_SETUP].add(config_entries_key)
 
     # pylint: disable=unused-argument
     async def async_update_devices(event_time):
@@ -298,6 +322,137 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     hass.services.async_register(DOMAIN, "refresh_scenarios", async_refresh_scenarios_service)
 
+    async def async_refresh_timers_service(call):
+        """Refresh timer list and notify listeners."""
+        timer_manager = hass.data[DOMAIN]["came_timer_manager"]
+        timers = await hass.async_add_executor_job(timer_manager.get_timers)
+        hass.bus.async_fire(f"{DOMAIN}_timers_refreshed", {"timers": timers})
+        async_dispatcher_send(hass, "came_timers_refreshed")
+
+    async def async_set_timer_enabled_service(call):
+        """Enable or disable a timer."""
+        timer_manager = hass.data[DOMAIN]["came_timer_manager"]
+        await hass.async_add_executor_job(
+            timer_manager.set_timer_enabled,
+            call.data["timer_id"],
+            call.data["enabled"],
+        )
+        await hass.async_add_executor_job(timer_manager.get_timers)
+        async_dispatcher_send(hass, "came_timers_refreshed")
+
+    async def async_set_timer_day_service(call):
+        """Enable or disable a weekday for a timer."""
+        timer_manager = hass.data[DOMAIN]["came_timer_manager"]
+        await hass.async_add_executor_job(
+            timer_manager.set_timer_day_enabled,
+            call.data["timer_id"],
+            call.data["day"],
+            call.data["enabled"],
+        )
+        await hass.async_add_executor_job(timer_manager.get_timers)
+        async_dispatcher_send(hass, "came_timers_refreshed")
+
+    async def async_set_timer_timetable_service(call):
+        """Set up to four intervals for a timer."""
+        timer_manager = hass.data[DOMAIN]["came_timer_manager"]
+        await hass.async_add_executor_job(
+            timer_manager.set_timer_timetable,
+            call.data["timer_id"],
+            call.data["timetable"],
+        )
+        await hass.async_add_executor_job(timer_manager.get_timers)
+        async_dispatcher_send(hass, "came_timers_refreshed")
+
+    async def async_set_timer_interval_service(call):
+        """Set a single start or stop value for a timer interval."""
+        timer_manager = hass.data[DOMAIN]["came_timer_manager"]
+        await hass.async_add_executor_job(
+            timer_manager.set_timer_interval_value,
+            call.data["timer_id"],
+            call.data["index"],
+            call.data["value"],
+            call.data["time"],
+        )
+        await hass.async_add_executor_job(timer_manager.get_timers)
+        async_dispatcher_send(hass, "came_timers_refreshed")
+
+    async def async_set_timer_interval_active_service(call):
+        """Enable or disable a single timer interval."""
+        timer_manager = hass.data[DOMAIN]["came_timer_manager"]
+        await hass.async_add_executor_job(
+            timer_manager.set_timer_interval_active,
+            call.data["timer_id"],
+            call.data["index"],
+            call.data["active"],
+        )
+        await hass.async_add_executor_job(timer_manager.get_timers)
+        async_dispatcher_send(hass, "came_timers_refreshed")
+
+    hass.services.async_register(
+        DOMAIN,
+        "refresh_timers",
+        async_refresh_timers_service,
+    )
+    hass.services.async_register(
+        DOMAIN,
+        "set_timer_enabled",
+        async_set_timer_enabled_service,
+        schema=vol.Schema(
+            {
+                vol.Required("timer_id"): cv.positive_int,
+                vol.Required("enabled"): cv.boolean,
+            }
+        ),
+    )
+    hass.services.async_register(
+        DOMAIN,
+        "set_timer_day",
+        async_set_timer_day_service,
+        schema=vol.Schema(
+            {
+                vol.Required("timer_id"): cv.positive_int,
+                vol.Required("day"): vol.All(vol.Coerce(int), vol.Range(min=0, max=6)),
+                vol.Required("enabled"): cv.boolean,
+            }
+        ),
+    )
+    hass.services.async_register(
+        DOMAIN,
+        "set_timer_timetable",
+        async_set_timer_timetable_service,
+        schema=vol.Schema(
+            {
+                vol.Required("timer_id"): cv.positive_int,
+                vol.Required("timetable"): TIMER_TIMETABLE_SCHEMA,
+            }
+        ),
+    )
+    hass.services.async_register(
+        DOMAIN,
+        "set_timer_interval",
+        async_set_timer_interval_service,
+        schema=vol.Schema(
+            {
+                vol.Required("timer_id"): cv.positive_int,
+                vol.Required("index"): vol.All(vol.Coerce(int), vol.Range(min=0, max=3)),
+                vol.Required("value"): vol.In(("start", "stop")),
+                vol.Required("time"): vol.Any(cv.string, dict),
+            }
+        ),
+    )
+    hass.services.async_register(
+        DOMAIN,
+        "set_timer_interval_active",
+        async_set_timer_interval_active_service,
+        schema=vol.Schema(
+            {
+                vol.Required("timer_id"): cv.positive_int,
+                vol.Required("index"): vol.All(vol.Coerce(int), vol.Range(min=0, max=3)),
+                vol.Required("active"): cv.boolean,
+            }
+        ),
+    )
+
     return True
 
 
@@ -321,6 +476,12 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry):
         hass.services.async_remove(DOMAIN, "create_scenario")
         hass.services.async_remove(DOMAIN, "delete_scenario")
         hass.services.async_remove(DOMAIN, "refresh_scenarios")
+        hass.services.async_remove(DOMAIN, "refresh_timers")
+        hass.services.async_remove(DOMAIN, "set_timer_enabled")
+        hass.services.async_remove(DOMAIN, "set_timer_day")
+        hass.services.async_remove(DOMAIN, "set_timer_timetable")
+        hass.services.async_remove(DOMAIN, "set_timer_interval")
+        hass.services.async_remove(DOMAIN, "set_timer_interval_active")
 
         domain_data = hass.data[DOMAIN]
 

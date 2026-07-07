@@ -16,7 +16,7 @@ class CameFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
     """Config flow for Came."""
 
     VERSION = 1
-    CONNECTION_CLASS = config_entries.CONN_CLASS_CLOUD_POLL
+    CONNECTION_CLASS = config_entries.CONN_CLASS_LOCAL_POLL
 
     async def async_step_import(self, platform_config: ConfigType):
         """Import a config entry.
@@ -66,7 +66,7 @@ class CameFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
                     vol.Required(
                         CONF_PASSWORD, default=cfg.get(CONF_PASSWORD)
                     ): cv.string,
-                    vol.Required(CONF_TOKEN, default=cfg.get(CONF_TOKEN)): cv.string,
+                    vol.Optional(CONF_TOKEN, default=cfg.get(CONF_TOKEN, "")): cv.string,
                 }
             ),
             errors=errors,
@@ -79,7 +79,7 @@ class CameFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
                 config[CONF_HOST],
                 config[CONF_USERNAME],
                 config[CONF_PASSWORD],
-                config[CONF_TOKEN],
+                config.get(CONF_TOKEN),
             )
             await self.hass.async_add_executor_job(manager.login)
             return True

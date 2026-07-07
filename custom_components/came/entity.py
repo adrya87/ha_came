@@ -63,7 +63,7 @@ class CameEntity(Entity):
         )
 
     @property
-    def device_state_attributes(self) -> Optional[Dict[str, Any]]:
+    def extra_state_attributes(self) -> Optional[Dict[str, Any]]:
         """Return device specific state attributes."""
         return {
             ATTR_ATTRIBUTION: ATTRIBUTION,

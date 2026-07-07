@@ -1,10 +1,9 @@
 """ETI/Domo abstract devices."""
 
-import logging
 from abc import ABC, abstractmethod
+from hashlib import sha1
+import logging
 from typing import Any, Dict, Optional, Union
-
-from _sha1 import sha1
 
 from ..exceptions import ETIDomoUnmanagedDeviceError
 from ..models import Floor, Room
@@ -92,7 +91,7 @@ class CameDevice(ABC):
 
     def _check_act_id(self):
         """Check for act ID availability."""
-        if not self.act_id:
+        if self.act_id is None:
             raise ETIDomoUnmanagedDeviceError()
 
     @property

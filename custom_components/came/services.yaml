@@ -20,3 +20,76 @@ delete_scenario:
     scenario_id:
       description: ID dello scenario da eliminare.
       example: 5
+
+refresh_timers:
+  description: Aggiorna la lista dei timer dal gateway CAME.
+
+set_timer_enabled:
+  description: Abilita o disabilita un timer.
+  fields:
+    timer_id:
+      description: ID del timer restituito da refresh_timers.
+      example: 1
+    enabled:
+      description: Stato di abilitazione del timer.
+      example: true
+
+set_timer_day:
+  description: Abilita o disabilita un giorno della settimana per un timer.
+  fields:
+    timer_id:
+      description: ID del timer restituito da refresh_timers.
+      example: 1
+    day:
+      description: Giorno della settimana, 0 lunedi e 6 domenica.
+      example: 0
+    enabled:
+      description: Stato di abilitazione del giorno.
+      example: true
+
+set_timer_timetable:
+  description: Imposta fino a 4 intervalli orari per un timer.
+  fields:
+    timer_id:
+      description: ID del timer restituito da refresh_timers.
+      example: 1
+    timetable:
+      description: Lista di massimo 4 intervalli con start e stop opzionale.
+      example:
+        - start: "08:00:00"
+          stop: "12:00:00"
+          active: true
+          index: 0
+        - start: "14:00:00"
+          stop: "18:00:00"
+          active: true
+          index: 1
+
+set_timer_interval:
+  description: Imposta un singolo valore start o stop di un intervallo timer.
+  fields:
+    timer_id:
+      description: ID del timer restituito da refresh_timers.
+      example: 1
+    index:
+      description: Indice intervallo, da 0 a 3.
+      example: 0
+    value:
+      description: Valore da aggiornare, start o stop.
+      example: "start"
+    time:
+      description: Orario in formato HH:MM o HH:MM:SS.
+      example: "08:00:00"
+
+set_timer_interval_active:
+  description: Abilita o disabilita un singolo intervallo timer.
+  fields:
+    timer_id:
+      description: ID del timer restituito da refresh_timers.
+      example: 1
+    index:
+      description: Indice intervallo, da 0 a 3.
+      example: 0
+    active:
+      description: Stato di abilitazione dell'intervallo.
+      example: true

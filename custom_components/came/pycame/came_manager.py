@@ -2,6 +2,7 @@
 
 import json
 import logging
+from urllib.parse import urlparse
 from typing import List, Optional
 
 import requests
@@ -10,6 +11,7 @@ from .const import DEBUG_DEEP, STARTUP_MESSAGE, VERSION
 from .devices import get_featured_devices
 from .devices.base import CameDevice, DeviceState
 from .devices.came_scenarios import ScenarioManager
+from .devices.came_timers import TimerManager
 from .exceptions import (
     ETIDomoConnectionError,
     ETIDomoConnectionTimeoutError,
@@ -40,15 +42,12 @@ class CameManager:
             _LOGGER.info(STARTUP_MESSAGE)
             _STARTUP.append(True)
 
-        if token is None or token == "":
-            raise ValueError("Access token is REQUIRED.")
-
         _LOGGER.debug("Setup ETI/Domo API for %s@%s", username, host)
 
-        self._host = host
+        self._url = self._normalize_url(host)
         self._username = username
         self._password = password
-        self._token = token
+        self._token = token or None
         self._session = session or requests.Session()
         self._hass = hass
         self._client_id = None
@@ -60,6 +59,27 @@ class CameManager:
         self._rooms = None
         self._devices = None
         self.scenario_manager = ScenarioManager(self)
+        self.timer_manager = TimerManager(self)
+
+    @staticmethod
+    def _normalize_url(host: str) -> str:
+        """Return the ETI/Domo endpoint URL from an IP, host, or full URL."""
+        host = (host or "").strip()
+        if not host:
+            raise ValueError("Host is required.")
+
+        parsed = urlparse(host if "://" in host else f"http://{host}")
+        scheme = parsed.scheme or "http"
+        netloc = parsed.netloc or parsed.path
+        path = parsed.path if parsed.netloc else ""
+        if not path or path == "/":
+            path = "/domo/"
+        elif path.endswith("/test.html"):
+            path = path[: -len("test.html")]
+        elif not path.endswith("/"):
+            path = f"{path}/"
+
+        return f"{scheme}://{netloc}{path}"
         
     @property
     def software_version(self) -> Optional[str]:
@@ -78,20 +98,20 @@ class CameManager:
 
     def _request(self, command: dict, resp_command: str = None) -> dict:
         """Handle a request to an ETI/Domo device."""
-        url = f"http://{self._host}/domo/"
         headers = {
             "User-Agent": f"PythonCameManager/{VERSION}",
             "Accept": "application/json, text/plain, */*",
             "Content-Type": "application/x-www-form-urlencoded",
-            "Authorization": f"access_token {self._token}",
         }
+        if self._token:
+            headers["Authorization"] = f"access_token {self._token}"
 
         try:
             if DEBUG_DEEP:
                 _LOGGER.debug("Send API request: %s", command)
 
             response = self._session.post(
-                url,
+                self._url,
                 data={"command": json.dumps(command)},
                 headers=headers,
                 timeout=REQUEST_TIMEOUT,
@@ -231,7 +251,7 @@ class CameManager:
         self._swver = response.get("swver")
         self._serial = response.get("serial")
         self._keycode = response.get("keycode")
-        self._features = response.get("list")
+        self._features = response.get("list") or []
         return self._features
 
     def get_all_floors(self) -> List[Floor]:
@@ -352,6 +372,9 @@ class CameManager:
             # Delega aggiornamenti scenari al manager
             if device_info.get("cmd_name", "").startswith("scenario_"):
                 self.scenario_manager.handle_update(self._hass, device_info)  
+
+            if device_info.get("cmd_name") == "timer_info_ind":
+                self.timer_manager.handle_update(self._hass, device_info)
             
             if device_info.get("cmd_name") == "plant_update_ind":
                 self._devices = None
@@ -359,7 +382,7 @@ class CameManager:
                 return True
                          
             act_id = device_info.get("act_id")
-            if act_id:
+            if act_id is not None:
                 device = self.get_device_by_act_id(act_id)
                 if device is not None:
                     updated |= device.update_state(device_info)

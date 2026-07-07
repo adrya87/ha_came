@@ -2,7 +2,7 @@
 import asyncio
 from typing import List
 
-from homeassistant.components.light import ATTR_BRIGHTNESS, ATTR_HS_COLOR
+from homeassistant.components.light import ATTR_BRIGHTNESS, ATTR_HS_COLOR, ColorMode
 from homeassistant.components.light import DOMAIN as LIGHT_DOMAIN
 from homeassistant.components.light import (
     LightEntity,
@@ -61,11 +61,11 @@ class CameLightEntity(CameEntity, LightEntity):
         self._pending_hs_color = None
 
         if getattr(self._device, "support_color", False):
-            color_modes = {"hs"}
+            color_modes = {ColorMode.HS}
         elif getattr(self._device, "support_brightness", False):
-            color_modes = {"brightness"}
+            color_modes = {ColorMode.BRIGHTNESS}
         else:
-            color_modes = {"onoff"}
+            color_modes = {ColorMode.ONOFF}
 
         self._attr_supported_color_modes = color_modes
 
@@ -212,4 +212,3 @@ class CameLightEntity(CameEntity, LightEntity):
     @property
     def color_mode(self):
         return next(iter(self._attr_supported_color_modes))
-

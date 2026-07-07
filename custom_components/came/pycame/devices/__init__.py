@@ -16,6 +16,17 @@ from .came_scenarios import ScenarioDevice
 
 _LOGGER = logging.getLogger(__name__)
 
+FEATURE_ALIASES = {
+    "loadsctrl": "relays",
+}
+
+IGNORED_FEATURES = {
+    "cameras",
+    "irrig",
+    "sicu",
+    "sound",
+}
+
 FEATURE_RESPONSE_FIELDS = {
     "lights": ("light_list", "array"),
     "openings": ("array", "openings_list"),
@@ -38,6 +49,7 @@ def _response_items(response: dict, feature: str) -> list:
 def get_featured_devices(manager, feature: str) -> List[CameDevice]:
     """Get device implementations for the given feature."""
     devices = []
+    feature = FEATURE_ALIASES.get(feature, feature)
 
     if feature == "lights":
         cmd_name = "light_list_req"
@@ -60,8 +72,13 @@ def get_featured_devices(manager, feature: str) -> List[CameDevice]:
         
     elif feature == "scenarios":
         return [ScenarioDevice(manager)]    # Lo scenario non è un device singolo: restituiamo il gestore centralizzato          
+    elif feature == "timers":
+        return devices
     else:
-        _LOGGER.warning("Unsupported feature type: %s", feature)
+        if feature in IGNORED_FEATURES:
+            _LOGGER.debug("Feature type not exposed by this integration yet: %s", feature)
+        else:
+            _LOGGER.warning("Unsupported feature type: %s", feature)
         return devices
 
     cmd = {
